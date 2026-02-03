@@ -222,9 +222,26 @@ It is the **primary way for agents to read and place sidechannel messages**. TTY
 
 **Token generation (recommended)**
 Generate a strong random token and pass it via `--sc-bridge-token`:
+
+macOS (default OpenSSL/LibreSSL):
 ```bash
 openssl rand -hex 32
 ```
+
+Ubuntu:
+```bash
+sudo apt-get update
+sudo apt-get install -y openssl
+openssl rand -hex 32
+```
+
+Windows (PowerShell, no install required):
+```powershell
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
+```
+
 Then start with:
 ```bash
 --sc-bridge-token <generated-token>

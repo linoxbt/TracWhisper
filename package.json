@@ -1,26 +1,34 @@
 {
-  "name": "contract-test-latest",
-  "version": "0.0.1",
+  "name": "tracwhisper",
+  "version": "1.0.0",
+  "description": "P2P end-to-end encrypted private notes on Trac Network, built on Intercom",
+  "main": "app.js",
   "type": "module",
-  "main": "index.js",
-  "pear": {
-    "name": "contract-test-latest",
-    "type": "terminal"
+  "scripts": {
+    "start": "pear run .",
+    "peer1": "pear run . --store-path ./stores/peer1",
+    "peer2": "pear run . --store-path ./stores/peer2 --port 7476"
   },
+  "keywords": [
+    "trac",
+    "intercom",
+    "p2p",
+    "encrypted",
+    "e2e",
+    "hyperswarm",
+    "private-messaging",
+    "notes"
+  ],
+  "author": "linoxbt",
+  "license": "MIT",
   "dependencies": {
     "b4a": "^1.6.7",
-    "bare-ws": "2.0.3",
-    "compact-encoding": "^2.18.0",
-    "crypto": "npm:bare-node-crypto",
-    "fs": "npm:bare-node-fs",
-    "path": "npm:bare-node-path",
-    "protomux": "^3.10.1",
-    "trac-msb": "git+https://github.com/Trac-Systems/main_settlement_bus.git#5088921",
-    "trac-peer": "git+https://github.com/Trac-Systems/trac-peer.git#d108f52",
-    "trac-wallet": "1.0.1",
-    "util": "npm:bare-node-util"
+    "hypercore-crypto": "^3.4.2",
+    "hyperswarm": "^4.7.15",
+    "ws": "^8.18.0"
   },
-  "overrides": {
-    "trac-wallet": "1.0.1"
+  "pear": {
+    "name": "tracwhisper",
+    "type": "terminal"
   }
 }

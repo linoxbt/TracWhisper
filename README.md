@@ -1,162 +1,196 @@
-# IntercomBoard 📡
+# TracWhisper 🔐
 
-> **A decentralized, censorship-resistant P2P bulletin board built on Trac Network / Intercom.**
+> **P2P end-to-end encrypted private notes on Trac Network — built on Intercom.**
 
-Think Hacker News — but with no server, no admin, no account, and no way to take it down.
+Send encrypted messages directly to any peer's public key. Only the intended recipient can decrypt. No server. No logs. No middleman. Ever.
 
 **Trac address:** `trac147v9pnaywkc53cwwzdj7w3mt2dwquax44ymafzky22pnv0t6qypsxumrg4`
 
+**Fork of:** [Trac-Systems/intercom](https://github.com/Trac-Systems/intercom)
+
 ---
 
-## What is IntercomBoard?
+## Screenshot
 
-IntercomBoard turns the Intercom P2P stack into a community bulletin board where:
+<img width="1366" height="688" alt="Screenshot (152)" src="https://github.com/user-attachments/assets/2363a88b-30e9-4028-9b48-66b5c382eb2b" />
 
-- **Anyone can post** a title, link, or text — signed with their local keypair
-- **Anyone can upvote** posts (one vote per keypair per post, enforced cryptographically)
-- **Anyone can comment** on posts
-- **Everything is replicated** peer-to-peer via Hyperswarm — no central server
-- **State is gossip-propagated** to all peers who join the same topic key
-- **Identity is a keypair**, not a username/password
+![TracWhisper UI — P2P Encrypted Notes]
 
-Posts, votes, and comments are all signed messages. Invalid signatures are rejected automatically. Double-votes are deduplicated by `postId:voterPublicKey`. The board state converges across peers via a sync-on-connect + gossip protocol.
+*Three-panel UI: contacts (left), compose encrypted note (center), inbox + note viewer (right). Terminal shows live peer connections via Hyperswarm.*
+
+---
+
+## What is TracWhisper?
+
+TracWhisper is a private, encrypted messaging app built on the Intercom P2P stack. Unlike chat apps that store your messages on a server, TracWhisper delivers notes directly peer-to-peer — encrypted before they leave your device and decrypted only by the recipient.
+
+**Core properties:**
+- 🔐 **End-to-end encrypted** — AES-256-GCM encryption, keyed via ECDH-derived shared secret
+- ✍️ **Signed** — every note is signed with Ed25519, proving authorship
+- 📡 **Serverless** — no relay, no storage, pure Hyperswarm P2P delivery
+- 👤 **Keypair identity** — no accounts, no usernames, just a local keypair
+- 🌐 **Browser UI** — clean dark interface at `http://localhost:7474`
+- 🖥️ **CLI mode** — full terminal access for agents
+
+---
+
+## How Encryption Works
+
+```
+Sender                              Recipient
+──────                              ─────────
+1. Generate shared secret:          1. Generate shared secret:
+   HMAC-SHA256(mySecKey XOR            HMAC-SHA256(mySecKey XOR
+   recipientEncPubKey)                 senderEncPubKey)
+                                       [same result — symmetric]
+2. Encrypt with AES-256-GCM
+   (random 12-byte IV per note)     2. Decrypt with AES-256-GCM
+                                       (verify GCM auth tag)
+3. Sign { payload, from, to,        3. Verify Ed25519 signature
+   ts, id } with Ed25519
+
+4. Send over Hyperswarm P2P ──────► 4. Receive, verify, decrypt, read
+```
+
+The server (there isn't one) never sees plaintext. Peers who aren't the intended recipient receive nothing — notes are addressed and only delivered to the target peer.
+
+---
+
+## Identity Model
+
+Each peer has two keypairs:
+
+| Keypair | Algorithm | Purpose |
+|---------|-----------|---------|
+| Sign keypair | Ed25519 | Proving message authorship |
+| Enc keypair  | Random 32-byte key | Deriving shared secrets for AES encryption |
+
+Both are generated once on first run and stored in `stores/<name>/identity.json`.
+
+To receive notes from someone, they need your **sign public key** (to address notes to you) and your **enc public key** (to encrypt for you). The UI displays both — just share them.
 
 ---
 
 ## Architecture
 
 ```
-Browser (http://localhost:7373)
-        │  WebSocket (ws://localhost:7374)
+Browser (http://localhost:7474)
+        │  WebSocket (ws://localhost:7475)
         ▼
-  IntercomBoard process (Pear runtime)
-  ┌──────────────────────────────────┐
-  │  Local keypair (Ed25519)          │
-  │  In-memory post/vote/comment DB   │
-  │  Message signing + verification   │
-  └────────────┬─────────────────────┘
-               │ Hyperswarm
-               ▼
-     ┌──── P2P Network ────┐
-     │  Other board peers  │
-     │  (gossip protocol)  │
-     └─────────────────────┘
+  TracWhisper process (Pear runtime)
+  ┌────────────────────────────────────────┐
+  │  Ed25519 keypair  (sign/verify)         │
+  │  Enc keypair      (ECDH shared secret)  │
+  │  AES-256-GCM      (encrypt/decrypt)     │
+  │  In-memory inbox + sent store           │
+  └────────────────┬───────────────────────┘
+                   │ Hyperswarm
+                   ▼
+        ┌─── P2P Discovery ───┐
+        │  topic: sha256(     │
+        │  "tracwhisper-v1…") │
+        │  Hello handshake    │
+        │  (exchange enc keys)│
+        └─────────────────────┘
 ```
 
-**Message types:**
-
-| Type | Payload | Dedup strategy |
-|------|---------|----------------|
-| `post` | id, title, url, body | by `post.id` |
-| `vote` | postId | by `postId:voterKey` |
-| `comment` | id, postId, text | by `comment.id` |
-
-All messages include: `{ type, data, author (pubkey hex), ts, sig }`. Signature covers `{type, data, author, ts}`.
+Discovery flow:
+1. Both peers join the same Hyperswarm topic
+2. On connect, each sends a `hello` message with their enc public key
+3. Peers store each other's enc keys in contacts
+4. Notes are encrypted + signed, sent directly over the P2P connection
+5. Recipient verifies signature, decrypts, reads
 
 ---
 
 ## How to Run
 
 ### Prerequisites
-
 ```bash
 npm install -g pear
 pear --version
 ```
 
-### Install dependencies
-
+### Install & run
 ```bash
 git clone https://github.com/linoxbt/intercom
 cd intercom
 npm install
+pear run . --store-path ./stores/peer1
 ```
 
-### Run IntercomBoard
+Open **http://localhost:7474** in your browser.
 
+### Run a second peer (to test)
 ```bash
-pear run . --store-path ./stores/board1
+pear run . --store-path ./stores/peer2 --port 7476
 ```
 
-Then open **http://localhost:7373** in your browser.
-
-To run a second peer (on another machine or terminal):
-
-```bash
-pear run . --store-path ./stores/board2 --port 7375
-```
-
-Both peers will automatically discover each other via Hyperswarm DHT and sync their board state.
+Open **http://localhost:7476** — the two peers will auto-discover each other, exchange enc keys, and you can send encrypted notes between them.
 
 ---
 
-## Features
+## WebSocket API (for agents)
 
-- 🔐 **Cryptographic identity** — Ed25519 keypair generated on first run, persisted locally
-- ✅ **Signed messages** — every post, vote, and comment is signed and verified
-- 🚫 **No double-voting** — enforced by `postId:voterKey` deduplication across peers
-- 🌐 **Browser UI** — clean dark-mode web interface at `http://localhost:7373`
-- 🔄 **Sync on connect** — new peers receive current board state when joining
-- 📡 **Gossip propagation** — messages forwarded to all connected peers
-- 💬 **Comments** — threaded comments per post
-- 🔥 **Sort by votes or newest** — toggle in the UI
-- 🖥️ **CLI mode** — terminal commands: `post`, `vote`, `list`, `peers`
+Connect to `ws://localhost:7475`. On connect, receive:
+
+```json
+{ "type": "init", "pubKey": "<ed25519 hex>", "encPubKey": "<enc hex>" }
+{ "type": "contacts", "contacts": [...] }
+{ "type": "inbox", "notes": [...] }
+{ "type": "peers", "count": 2 }
+```
+
+### Send a note
+```json
+{ "cmd": "send", "toPubKey": "<recipient sign pubkey>", "body": "Hello!" }
+```
+
+### Add a contact manually
+```json
+{ "cmd": "add_contact", "pubKey": "<sign key>", "encPubKey": "<enc key>", "label": "Alice" }
+```
+
+### Events from server
+```json
+{ "type": "note", "note": { "id", "from", "fromShort", "body", "ts", "read" } }
+{ "type": "sent_ok", "note": { "id", "to", "toShort", "body", "ts" } }
+{ "type": "contacts", "contacts": [...] }
+{ "type": "peers", "count": 3 }
+```
 
 ---
 
-## Screenshots
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `whoami` | Print your sign + enc public keys |
+| `inbox` | List received notes |
+| `contacts` | List known contacts |
+| `send <pubkey> <message>` | Send encrypted note |
+| `exit` | Quit |
+
+---
+
+## File Structure
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ 📡 IntercomBoard  [P2P]   Decentralized…             3 peers    │
-├─────────────────────────────────────────────────────────────────┤
-│ + Submit Post                                                   │
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ Title: Trac Network launches Intercom agent protocol        │ │
-│ │ URL:   https://github.com/Trac-Systems/intercom             │ │
-│ │ Body:  P2P messaging for AI agents                          │ │
-│ │                                           [Broadcast →]     │ │
-│ └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│ Sort: [🔥 Top]  [✨ New]                                         │
-│                                                                  │
-│ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ 3b9f2a1c8e7d…  · 2/25/2026, 10:42:00 AM                    │ │
-│ │ Trac Network launches Intercom agent protocol                │ │
-│ │ P2P messaging for AI agents                                  │ │
-│ │ [▲ Upvote]  12   [💬 3]                                     │ │
-│ └──────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│ ┌──────────────────────────────────────────────────────────────┐ │
-│ │ a91d4f3b2c6e…  · 2/25/2026, 10:30:00 AM                    │ │
-│ │ DeAI: Why decentralized AI needs decentralized comms        │ │
-│ │ [▲ Upvote]  7    [💬 1]                                     │ │
-│ └──────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+intercom/
+├── app.js          ← TracWhisper main application
+├── SKILL.md        ← Agent instructions
+├── README.md       ← This file
+├── package.json    ← Dependencies
+└── stores/
+    └── peer1/
+        └── identity.json   ← Your keypairs (auto-generated, never share secretKey)
 ```
 
 ---
 
 ## Competition Entry
 
-This is a fork of [Trac-Systems/intercom](https://github.com/Trac-Systems/intercom) for the **Intercom Vibe Competition**.
-
-- **Trac address:** `trac147v9pnaywkc53cwwzdj7w3mt2dwquax44ymafzky22pnv0t6qypsxumrg4`
-- **App:** IntercomBoard — Decentralized P2P bulletin board
+- **App:** TracWhisper — P2P End-to-End Encrypted Notes
 - **Fork:** https://github.com/linoxbt/intercom
-
----
-
-## Original Intercom README
-
-This repository is a reference implementation of the **Intercom** stack on Trac Network for an **internet of agents**.
-
-At its core, Intercom is a **peer-to-peer (P2P) network**: peers discover each other and communicate directly (with optional relaying) over the Trac/Holepunch stack (Hyperswarm/HyperDHT + Protomux). There is no central server required for sidechannel messaging.
-
-Features:
-- **Sidechannels**: fast, ephemeral P2P messaging
-- **SC-Bridge**: authenticated local WebSocket control surface for agents/tools
-- **Contract + protocol**: deterministic replicated state and optional chat
-- **MSB client**: optional value-settled transactions via the validator network
-
-For full agent-oriented instructions, see `SKILL.md`.
+- **Trac address:** `trac147v9pnaywkc53cwwzdj7w3mt2dwquax44ymafzky22pnv0t6qypsxumrg4`
+- **Base:** Fork of [Trac-Systems/intercom](https://github.com/Trac-Systems/intercom)
